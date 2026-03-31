@@ -1,0 +1,80 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - dev
+      - test
+      - uat
+      - master
+
+jobs:
+  terraform-apply:
+    runs-on: ubuntu-latest
+
+    # 🌿 GitHub Environment based on merged branch
+    environment:
+      name: ${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'test' && 'test' || github.ref_name == 'uat' && 'uat' || 'prod' }}
+
+    env:
+      TF_PLAN_BUCKET: your-tfplan-bucket   # 🔁 change
+      TF_STATE_BUCKET: sherpal-terraform-state
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # 🌿 Set ENV variable
+      - name: Set ENV
+        run: |
+          BRANCH=${GITHUB_REF##*/}
+
+          if [ "$BRANCH" = "dev" ]; then
+            echo "ENV=dev" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "test" ]; then
+            echo "ENV=test" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "uat" ]; then
+            echo "ENV=uat" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "master" ]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+          else
+            echo "Unknown branch"; exit 1
+          fi
+
+      # 🔧 Terraform Init (REQUIRED again)
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ env.ENV }}/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      # 🔍 Extract PR number from merge commit
+      - name: Extract PR Number
+        id: pr
+        run: |
+          PR_NUMBER=$(echo "${{ github.event.head_commit.message }}" | grep -oE '#[0-9]+' | tr -d '#')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "PR number not found!"; exit 1
+          fi
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      # 📥 Download plan from S3
+      - name: Download Plan
+        run: |
+          aws s3 cp s3://${TF_PLAN_BUCKET}/${{ env.ENV }}/${{ steps.pr.outputs.pr_number }}.tfplan tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
