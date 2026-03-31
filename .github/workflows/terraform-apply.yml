@@ -14,11 +14,11 @@ jobs:
 
     # 🌿 GitHub Environment based on merged branch
     environment:
-      name: ${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'test' && 'test' || github.ref_name == 'uat' && 'uat' || 'prod' }}
+      name: ${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'test' && 'test' || github.ref_name == 'uat' && 'uat' || github.ref_name == 'master' && 'prod' || 'dev' }}
 
     env:
-      TF_PLAN_BUCKET: your-tfplan-bucket   # 🔁 change
-      TF_STATE_BUCKET: sherpal-terraform-state
+      TF_PLAN_BUCKET: github-actions-demo-artifacts
+      TF_STATE_BUCKET: cognine-terraform-states
 
     steps:
       - name: Checkout Code
@@ -56,8 +56,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=${{ env.ENV }}/terraform.tfstate" \
-            -backend-config="region=${{ vars.AWS_REGION }}"
+            -backend-config="key=github-actions-demo/$ENV/terraform.tfstate"
 
       # 🔍 Extract PR number from merge commit
       - name: Extract PR Number
@@ -74,7 +73,7 @@ jobs:
       # 📥 Download plan from S3
       - name: Download Plan
         run: |
-          aws s3 cp s3://${TF_PLAN_BUCKET}/${{ env.ENV }}/${{ steps.pr.outputs.pr_number }}.tfplan tfplan
+          aws s3 cp s3://${TF_PLAN_BUCKET}/$ENV/${{ steps.pr.outputs.pr_number }}.tfplan tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan

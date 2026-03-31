@@ -14,11 +14,14 @@ jobs:
 
     # 🌿 GitHub Environment based on PR target branch
     environment:
-      name: ${{ github.base_ref == 'dev' && 'dev' || github.base_ref == 'test' && 'test' || github.base_ref == 'uat' && 'uat' || 'prod' }}
+      name: ${{ github.base_ref == 'dev' && 'dev' || github.base_ref == 'test' && 'test' || github.base_ref == 'uat' && 'uat' || github.base_ref == 'master' && 'prod' || 'dev' }}
 
     env:
-      TF_PLAN_BUCKET: your-tfplan-bucket   # 🔁 change
-      TF_STATE_BUCKET: sherpal-terraform-state
+      TF_PLAN_BUCKET: github-actions-demo-artifacts
+      TF_STATE_BUCKET: cognine-terraform-states
+      TF_AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+      TF_ENVIRONMENT: ${{ vars.ENVIRONMENT }}
 
     steps:
       - name: Checkout Code
@@ -56,8 +59,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=${{ env.ENV }}/terraform.tfstate" \
-            -backend-config="region=${{ vars.AWS_REGION }}"
+            -backend-config="key=github-actions-demo/$ENV/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check
@@ -66,12 +68,17 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -var-file="${{ env.ENV }}.tfvars" -out=tfplan
+        run: |
+          terraform plan \
+            -var="aws_region=${TF_AWS_REGION:-ap-south-1}" \
+            -var="environment=${TF_ENVIRONMENT:-$ENV}" \
+            -var="project_name=${TF_PROJECT_NAME:-github-actions-demo}" \
+            -out=tfplan
 
       # ☁️ Upload plan to S3
       - name: Upload Plan to S3
         run: |
-          aws s3 cp tfplan s3://${TF_PLAN_BUCKET}/${{ env.ENV }}/${{ github.event.pull_request.number }}.tfplan
+          aws s3 cp tfplan s3://${TF_PLAN_BUCKET}/$ENV/${{ github.event.pull_request.number }}.tfplan
 
       - name: Show Plan Output
         run: terraform show tfplan
