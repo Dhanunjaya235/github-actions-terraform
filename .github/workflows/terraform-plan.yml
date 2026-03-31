@@ -14,7 +14,7 @@ jobs:
 
     # 🌿 GitHub Environment based on PR target branch
     environment:
-      name: ${{ github.base_ref == 'dev' && 'dev' || github.base_ref == 'test' && 'test' || github.base_ref == 'uat' && 'uat' || github.base_ref == 'master' && 'prod' || 'dev' }}
+      name: ${{ github.base_ref == 'dev' && 'dev' || github.base_ref == 'test' && 'test' || github.base_ref == 'uat' && 'uat' || github.base_ref == 'master' && 'prod' || github.base_ref == 'main' && 'prod' || 'dev' }}
 
     env:
       TF_PLAN_BUCKET: github-actions-demo-artifacts
