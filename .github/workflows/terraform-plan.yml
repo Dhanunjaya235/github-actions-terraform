@@ -1,0 +1,77 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - test
+      - uat
+      - master
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+
+    # 🌿 GitHub Environment based on PR target branch
+    environment:
+      name: ${{ github.base_ref == 'dev' && 'dev' || github.base_ref == 'test' && 'test' || github.base_ref == 'uat' && 'uat' || 'prod' }}
+
+    env:
+      TF_PLAN_BUCKET: your-tfplan-bucket   # 🔁 change
+      TF_STATE_BUCKET: sherpal-terraform-state
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # 🌿 Set ENV variable
+      - name: Set ENV
+        run: |
+          BRANCH=${{ github.base_ref }}
+
+          if [ "$BRANCH" = "dev" ]; then
+            echo "ENV=dev" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "test" ]; then
+            echo "ENV=test" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "uat" ]; then
+            echo "ENV=uat" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "master" ]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+          else
+            echo "Unknown branch"; exit 1
+          fi
+
+      # 🔧 Terraform Init with S3 backend
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${{ env.ENV }}/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -var-file="${{ env.ENV }}.tfvars" -out=tfplan
+
+      # ☁️ Upload plan to S3
+      - name: Upload Plan to S3
+        run: |
+          aws s3 cp tfplan s3://${TF_PLAN_BUCKET}/${{ env.ENV }}/${{ github.event.pull_request.number }}.tfplan
+
+      - name: Show Plan Output
+        run: terraform show tfplan
